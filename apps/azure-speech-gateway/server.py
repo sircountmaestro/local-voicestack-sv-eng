@@ -31,6 +31,7 @@ AUDIO_FORMAT = os.environ.get(
 ).strip()
 LISTEN_HOST = os.environ.get("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "5050"))
+MAX_BODY = int(os.environ.get("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 TTS_MODEL = "azure-tts"
 STT_MODEL = "azure-stt"
 AZURE_WAV_TYPE = "audio/wav; codecs=audio/pcm; samplerate=16000"
@@ -389,6 +390,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         length = int(self.headers.get("Content-Length") or "0")
+        if length > MAX_BODY:
+            self._json(413, {"error": {"message": "body too large"}})
+            return
         raw = self.rfile.read(length) if length else b""
         if path in ("/v1/audio/speech", "/audio/speech"):
             self._handle_speech(raw)

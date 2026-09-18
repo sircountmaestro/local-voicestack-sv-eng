@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Läs markerad text och spela via Kokoro (en) eller Azure (sv).
-# Användning: tts-sel en | tts-sel sv
 set -u
 export DISPLAY="${DISPLAY:-:0}"
 export PATH="$HOME/.local/bin:/usr/bin:/bin:$PATH"
 
-log="${TMPDIR:-/tmp}/tts-sel.log"
-echo "$(date -Iseconds) start args=$* DISPLAY=$DISPLAY USER=$USER" >>"$log"
+rundir="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/local-voicestack"
+mkdir -p "$rundir"
+log="$rundir/tts-sel.log"
+pidfile="$rundir/tts-sel.pid"
+echo "$(date -Iseconds) start args=$* DISPLAY=$DISPLAY WAYLAND=${WAYLAND_DISPLAY:-}" >>"$log"
 
 lang="${1:-en}"
 case "$lang" in
@@ -34,7 +36,7 @@ case "$lang" in
 esac
 
 if ! curl -sf --max-time 2 "$health" >/dev/null; then
-  command -v notify-send >/dev/null && notify-send "TTS" "$label är nere. Öppna en terminal och kör: tts"
+  command -v notify-send >/dev/null && notify-send "TTS" "$label är nere. Kör: tts"
   echo "health fail $health" >>"$log"
   exit 1
 fi
@@ -42,24 +44,33 @@ fi
 command -v notify-send >/dev/null && notify-send -t 2000 "TTS" "$label: läser markerad text"
 
 read_sel() {
-  timeout 2 python3 - <<'PY' 2>/dev/null || true
+  local t=""
+  if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+    t="$(timeout 1 wl-paste --primary 2>/dev/null || true)"
+    [[ -z "$t" ]] && t="$(timeout 1 wl-paste -n 2>/dev/null || true)"
+  fi
+  if [[ -z "$t" ]]; then
+    t="$(timeout 2 python3 - <<'PY' 2>/dev/null || true
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
 for sel in (Gdk.SELECTION_PRIMARY, Gdk.SELECTION_CLIPBOARD):
-    t = Gtk.Clipboard.get(sel).wait_for_text()
-    if t and t.strip():
-        print(t, end="")
+    text = Gtk.Clipboard.get(sel).wait_for_text()
+    if text and text.strip():
+        print(text, end="")
         break
 PY
+)"
+  fi
+  printf '%s' "$t"
 }
 text="$(read_sel)"
-xclip="$(command -v xclip || true)"
-if [[ -z "$text" && -n "$xclip" ]]; then
-  text="$(timeout 1 "$xclip" -selection primary -o 2>/dev/null || true)"
-fi
-if [[ -z "$text" && -n "$xclip" ]]; then
-  text="$(timeout 1 "$xclip" -selection clipboard -o 2>/dev/null || true)"
+if [[ -z "$text" ]]; then
+  xclip="$(command -v xclip || true)"
+  if [[ -n "$xclip" ]]; then
+    text="$(timeout 1 "$xclip" -selection primary -o 2>/dev/null || true)"
+    [[ -z "$text" ]] && text="$(timeout 1 "$xclip" -selection clipboard -o 2>/dev/null || true)"
+  fi
 fi
 text="${text#"${text%%[![:space:]]*}"}"
 text="${text%"${text##*[![:space:]]}"}"
@@ -77,16 +88,27 @@ if (( ${#text} > max_chars )); then
   command -v notify-send >/dev/null && notify-send "TTS" "Texten kapades till ${max_chars} tecken."
 fi
 
-out="${TMPDIR:-/tmp}/tts-sel.mp3"
+out="$(mktemp "$rundir/tts-sel.XXXXXX.mp3")"
+json="$(mktemp "$rundir/tts-sel.XXXXXX.json")"
+cleanup() { rm -f "$out" "$json"; }
+trap cleanup EXIT
+
 export TTS_SEL_MODEL="$model"
 export TTS_SEL_VOICE="$voice"
-printf '%s' "$text" | python3 -c 'import json,os,sys; print(json.dumps({"model":os.environ["TTS_SEL_MODEL"],"voice":os.environ["TTS_SEL_VOICE"],"input":sys.stdin.read(),"response_format":"mp3"}))' > "${TMPDIR:-/tmp}/tts-sel.json"
+printf '%s' "$text" | python3 -c 'import json,os,sys; print(json.dumps({"model":os.environ["TTS_SEL_MODEL"],"voice":os.environ["TTS_SEL_VOICE"],"input":sys.stdin.read(),"response_format":"mp3"}))' >"$json"
 
-pkill -f 'ffplay .*/tts-sel.mp3' >/dev/null 2>&1 || true
+if [[ -f "$pidfile" ]]; then
+  oldpid="$(cat "$pidfile" 2>/dev/null || true)"
+  if [[ -n "$oldpid" ]] && kill -0 "$oldpid" 2>/dev/null; then
+    kill "$oldpid" 2>/dev/null || true
+    wait "$oldpid" 2>/dev/null || true
+  fi
+  rm -f "$pidfile"
+fi
 
 code="$(curl -sS --max-time 120 -o "$out" -w '%{http_code}' \
   -H 'Content-Type: application/json' \
-  --data-binary @"${TMPDIR:-/tmp}/tts-sel.json" \
+  --data-binary @"$json" \
   "$url")"
 
 echo "http $code bytes $(wc -c < "$out" 2>/dev/null || echo 0)" >>"$log"
@@ -96,4 +118,16 @@ if [[ "$code" != "200" ]] || [[ ! -s "$out" ]]; then
   exit 1
 fi
 
-exec ffplay -nodisp -autoexit -loglevel error "$out"
+player="$(command -v ffplay || command -v paplay || command -v pw-play || true)"
+if [[ -z "$player" ]]; then
+  echo "ingen spelare (ffplay/paplay)" >>"$log"
+  exit 1
+fi
+if [[ "$(basename "$player")" == "ffplay" ]]; then
+  "$player" -nodisp -autoexit -loglevel error "$out" &
+else
+  "$player" "$out" &
+fi
+echo $! >"$pidfile"
+wait "$(cat "$pidfile")" 2>/dev/null || true
+rm -f "$pidfile"

@@ -1,9 +1,9 @@
 services:
   whisper-stt-sv:
     build: .
-    image: whisper-stt-sv:local
+    image: local-voicestack-whisper:1.0.0
     container_name: whisper-stt-sv
-    restart: "no"
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -11,6 +11,7 @@ services:
       LISTEN_PORT: "9000"
       NVIDIA_VISIBLE_DEVICES: ""
       CUDA_VISIBLE_DEVICES: ""
+      # STT hålls på CPU medvetet så Kokoro kan ta GPU.
     ports:
       - "127.0.0.1:9000:9000"
     volumes:

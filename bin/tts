@@ -19,8 +19,11 @@ wait_http() {
   return 1
 }
 
-kokoro_compose="$ROOT/apps/kokoro-fastapi/compose.yml"
-if [[ -f "$ROOT/apps/kokoro-fastapi/.use-cpu" ]]; then
+if [[ -x "$ROOT/bin/detect-gpu.sh" ]] && "$ROOT/bin/detect-gpu.sh"; then
+  rm -f "$ROOT/apps/kokoro-fastapi/.use-cpu"
+  kokoro_compose="$ROOT/apps/kokoro-fastapi/compose.yml"
+else
+  touch "$ROOT/apps/kokoro-fastapi/.use-cpu"
   kokoro_compose="$ROOT/apps/kokoro-fastapi/compose.cpu.yml"
 fi
 docker compose -f "$kokoro_compose" up -d
@@ -49,6 +52,13 @@ if [[ -f "$azure_env" ]] && grep -qE '^AZURE_SPEECH_KEY=[^[:space:]]+' "$azure_e
   else
     echo "Azure svarade inte på :5050" >&2
   fi
+fi
+
+echo "Whisper (första start kan ladda modell till ~/.cache/huggingface)…"
+if wait_http "http://127.0.0.1:9000/health" 180; then
+  echo "Whisper SV  http://127.0.0.1:9000/health"
+else
+  echo "Whisper svarade inte på :9000 ännu. Diktering väntar in modellen." >&2
 fi
 
 if [[ "${TTSPRO_OPEN_UI:-}" == "1" ]]; then

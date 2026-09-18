@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Shell syntax
+        run: bash -n install.sh bin/tts bin/ttsoff bin/tts-sel bin/tts-en bin/tts-sv
+      - name: Compose files
+        run: |
+          cp apps/azure-speech-gateway/.env.example apps/azure-speech-gateway/.env
+          cp apps/whisper-stt-sv/.env.example apps/whisper-stt-sv/.env
+          docker compose -f apps/azure-speech-gateway/compose.yml config >/dev/null
+          docker compose -f apps/whisper-stt-sv/compose.yml config >/dev/null
+          docker compose -f apps/kokoro-fastapi/compose.yml config >/dev/null
+          docker compose -f apps/kokoro-fastapi/compose.cpu.yml config >/dev/null
+      - name: STT unit tests
+        working-directory: apps/stt-hotkey
+        run: |
+          python -m pip install -q numpy
+          python -m unittest discover -s tests -v

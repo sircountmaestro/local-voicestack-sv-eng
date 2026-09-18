@@ -31,6 +31,7 @@ COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8").strip() or "int8"
 DEFAULT_LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "sv").strip() or "sv"
 LISTEN_HOST = os.environ.get("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "9000"))
+MAX_BODY = int(os.environ.get("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 
 _INFER_LOCK = threading.Lock()
 _MODEL: WhisperModel | None = None
@@ -228,6 +229,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": {"message": "not found"}})
             return
         length = int(self.headers.get("Content-Length") or "0")
+        if length > MAX_BODY:
+            self._json(413, {"error": {"message": "body too large"}})
+            return
         raw = self.rfile.read(length) if length else b""
         ctype = self.headers.get("Content-Type") or ""
         qs = parse_qs(parsed.query)

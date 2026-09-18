@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 BIN="$HOME/.local/bin"
 mkdir -p "$BIN"
 
-echo "== lokal-roststack install $ROOT =="
+echo "== local-voicestack-sv-eng install $ROOT =="
 
 need=()
 for cmd in docker curl python3 ffmpeg; do
@@ -14,12 +14,10 @@ for cmd in docker curl python3 ffmpeg; do
 done
 if ((${#need[@]})); then
   echo "Saknas: ${need[*]}"
-  echo "  Debian/Ubuntu/Zorin: sudo apt install docker.io docker-compose-v2 python3 python3-venv python3-pip ffmpeg curl xclip xdotool python3-gi gir1.2-gtk-3.0"
-  echo "  Fedora: sudo dnf install docker python3 ffmpeg curl xclip xdotool python3-gobject gtk3"
+  echo "  Debian/Ubuntu/Zorin: sudo apt install docker.io docker-compose-v2 python3 python3-venv python3-pip ffmpeg curl xclip xdotool wl-clipboard wtype python3-gi gir1.2-gtk-3.0"
 fi
 command -v docker >/dev/null || echo "Docker krävs för Kokoro/Azure/Whisper." >&2
 
-# Tom .env — användarens egen nyckel, skriv inte över ifylld fil
 if [[ ! -f "$ROOT/apps/azure-speech-gateway/.env" ]]; then
   cp "$ROOT/apps/azure-speech-gateway/.env.example" "$ROOT/apps/azure-speech-gateway/.env"
   chmod 600 "$ROOT/apps/azure-speech-gateway/.env"
@@ -29,13 +27,14 @@ if [[ ! -f "$ROOT/apps/whisper-stt-sv/.env" ]]; then
   cp "$ROOT/apps/whisper-stt-sv/.env.example" "$ROOT/apps/whisper-stt-sv/.env"
 fi
 
-# Kokoro: GPU om Docker ser NVIDIA, annars CPU-image
-if docker info 2>/dev/null | grep -qi nvidia; then
+chmod +x "$ROOT"/bin/* "$ROOT/apps/stt-hotkey/scripts/"stt-* || true
+
+if "$ROOT/bin/detect-gpu.sh"; then
   rm -f "$ROOT/apps/kokoro-fastapi/.use-cpu"
-  echo "Kokoro: GPU-image (cu128)."
+  echo "Kokoro: GPU-image (v0.9.0-cu128)."
 else
   touch "$ROOT/apps/kokoro-fastapi/.use-cpu"
-  echo "Kokoro: CPU-image (ingen NVIDIA i Docker)."
+  echo "Kokoro: CPU-image (v0.9.0)."
 fi
 
 STT="$ROOT/apps/stt-hotkey"
@@ -50,8 +49,6 @@ if [[ ! -x "$STT/.venv/bin/python" ]]; then
   fi
 fi
 
-chmod +x "$ROOT"/bin/* "$STT"/scripts/stt-ensure "$STT"/scripts/stt-stop "$STT"/scripts/stt-tap
-
 for name in tts ttsoff tts-sel tts-en tts-sv; do
   ln -sfn "$ROOT/bin/$name" "$BIN/$name"
 done
@@ -64,23 +61,40 @@ _ensure_path_line() {
   local line='export PATH="$HOME/.local/bin:$PATH"'
   [[ -f "$file" ]] || return 0
   grep -qF '.local/bin' "$file" 2>/dev/null && return 0
-  printf '\n# lokal-roststack\n%s\n' "$line" >>"$file"
+  printf '\n# local-voicestack-sv-eng\n%s\n' "$line" >>"$file"
   echo "Lade PATH i $file"
 }
-
 _ensure_path_line "$HOME/.profile"
 _ensure_path_line "$HOME/.bashrc"
 _ensure_path_line "$HOME/.zshrc"
 export PATH="$BIN:$PATH"
 
-if command -v gsettings >/dev/null; then
-  PYTHONPATH="$STT" "$STT/.venv/bin/python" -c 'from stt_hotkey.gnome_hotkey import install; install()' 2>/dev/null \
-    && echo "GNOME: Ctrl+Alt+A STT, Ctrl+Alt+W EN, Ctrl+Alt+E SV" \
+if [[ -x "$STT/.venv/bin/python" ]]; then
+  set +e
+  desktops="$(PYTHONPATH="$STT" "$STT/.venv/bin/python" -c 'from stt_hotkey.desktop_hotkeys import install; print(", ".join(install()) or "inga")')"
+  set -e
+  echo "Genvägar: ${desktops:-ok} (Ctrl+Alt+A/W/E)"
+fi
+
+if command -v systemctl >/dev/null && [[ "$(ps -p 1 -o comm= 2>/dev/null || true)" == systemd ]]; then
+  unitdir="$HOME/.config/systemd/user"
+  mkdir -p "$unitdir"
+  cp "$ROOT/contrib/systemd/local-voicestack.service" "$unitdir/"
+  systemctl --user daemon-reload 2>/dev/null || true
+  systemctl --user enable local-voicestack.service 2>/dev/null \
+    && echo "systemd --user: local-voicestack.service (startar vid inloggning)" \
     || true
 fi
 
+if command -v docker >/dev/null; then
+  echo "Bygger Whisper-image (CPU, första modellnedladdning sker vid tts)…"
+  docker compose -f "$ROOT/apps/whisper-stt-sv/compose.yml" build >/dev/null \
+    && echo "Whisper-image: local-voicestack-whisper:1.0.0" \
+    || echo "Kunde inte bygga Whisper nu. tts bygger den senare."
+fi
+
 echo
-echo "Klart. Öppna en ny terminal så att PATH gäller, eller: export PATH=\"$BIN:\$PATH\""
-echo "Svensk TTS: sätt din egen nyckel i apps/azure-speech-gateway/.env  (se README.md)"
-echo "Starta: tts"
+echo "Klart. Ny terminal, eller: export PATH=\"$BIN:\$PATH\""
+echo "Svensk TTS: egen nyckel i apps/azure-speech-gateway/.env  (README)"
+echo "Starta: tts     Stoppa: ttsoff"
 echo "Brave unpacked: $ROOT/apps/kokoro-fastapi/brave-extension"

@@ -1,9 +1,9 @@
 services:
   azure-speech-gateway:
     build: .
-    image: azure-speech-gateway:local
+    image: local-voicestack-azure:1.0.0
     container_name: azure-speech-gateway
-    restart: "no"
+    restart: unless-stopped
     env_file:
       - .env
     environment:

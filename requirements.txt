@@ -1,4 +1,0 @@
-# STT-lyssnare (apps/stt-hotkey). Docker-tjänsterna har egna requirements.
-sounddevice>=0.4.6
-numpy>=1.26
-python-xlib>=0.33; sys_platform == "linux"

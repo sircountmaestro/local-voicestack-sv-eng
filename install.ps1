@@ -1,7 +1,7 @@
 # Installation på en ny Windows-dator. Ingen Azure-nyckel medföljer.
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-Write-Host "== lokal-roststack install $Root =="
+Write-Host "== local-voicestack-sv-eng install $Root =="
 
 function Test-Cmd($Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
@@ -26,16 +26,23 @@ if (-not (Test-Path $WhisperEnv)) {
 
 $UseCpu = Join-Path $Root "apps\kokoro-fastapi\.use-cpu"
 $gpu = $false
-try {
-    $info = docker info 2>$null | Out-String
-    if ($info -match "nvidia") { $gpu = $true }
-} catch {}
+if (Test-Path "\\.\nvidia0" -ErrorAction SilentlyContinue) { $gpu = $true }
+if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+    & nvidia-smi -L 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { $gpu = $true }
+}
+if (-not $gpu) {
+    try {
+        $info = docker info 2>$null | Out-String
+        if ($info -match "nvidia") { $gpu = $true }
+    } catch {}
+}
 if ($gpu) {
     if (Test-Path $UseCpu) { Remove-Item $UseCpu }
-    Write-Host "Kokoro: GPU-image."
+    Write-Host "Kokoro: GPU-image (v0.9.0-cu128)."
 } else {
     New-Item -ItemType File -Force -Path $UseCpu | Out-Null
-    Write-Host "Kokoro: CPU-image (ingen NVIDIA i Docker)."
+    Write-Host "Kokoro: CPU-image (v0.9.0)."
 }
 
 $Stt = Join-Path $Root "apps\stt-hotkey"
@@ -76,15 +83,28 @@ $line = 'export PATH="$HOME/.local/bin:$PATH"'
 if (Test-Path $GitBashRc) {
     $txt = Get-Content $GitBashRc -Raw
     if ($txt -notmatch '\.local/bin') {
-        Add-Content $GitBashRc "`n# lokal-roststack`n$line`n"
+        Add-Content $GitBashRc "`n# local-voicestack-sv-eng`n$line`n"
         Write-Host "Lade PATH i Git Bash ~/.bashrc"
     }
 } else {
-    Set-Content $GitBashRc "# lokal-roststack`n$line`n"
+    Set-Content $GitBashRc "# local-voicestack-sv-eng`n$line`n"
 }
 
+$Desktop = [Environment]::GetFolderPath("Desktop")
+$Wsh = New-Object -ComObject WScript.Shell
+$start = $Wsh.CreateShortcut((Join-Path $Desktop "Starta röststack.lnk"))
+$start.TargetPath = Join-Path $Root "tts.cmd"
+$start.WorkingDirectory = $Root
+$start.Save()
+$stop = $Wsh.CreateShortcut((Join-Path $Desktop "Stoppa röststack.lnk"))
+$stop.TargetPath = Join-Path $Root "ttsoff.cmd"
+$stop.WorkingDirectory = $Root
+$stop.Save()
+Copy-Item (Join-Path $Root "tts.cmd") (Join-Path $UserBin "tts.cmd") -Force
+Copy-Item (Join-Path $Root "ttsoff.cmd") (Join-Path $UserBin "ttsoff.cmd") -Force
+
 Write-Host ""
-Write-Host "Klart. Öppna ny Git Bash / PowerShell."
+Write-Host "Klart. Dubbelklicka tts.cmd eller skrivbordslänken Starta röststack."
 Write-Host "  Git Bash:     tts"
 Write-Host "  PowerShell:   tts.ps1"
 Write-Host "Svensk TTS: egen nyckel i apps\azure-speech-gateway\.env — se README.md"

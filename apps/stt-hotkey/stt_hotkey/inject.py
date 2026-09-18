@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -31,20 +32,26 @@ def inject_text(text: str) -> None:
 
 
 def _inject_linux(text: str) -> None:
+    wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
+    if wayland and shutil.which("wl-copy"):
+        old = _wl_read()
+        _wl_write(text)
+        _paste_keys(wayland=True)
+        if old is None:
+            return
+
+        def restore() -> None:
+            time.sleep(0.45)
+            _wl_write(old)
+
+        threading.Thread(target=restore, daemon=True).start()
+        return
     xclip = shutil.which("xclip")
-    xdotool = shutil.which("xdotool")
-    if not xclip or not xdotool:
-        raise RuntimeError("xclip och xdotool krävs för att klistra in text")
+    if not xclip:
+        raise RuntimeError("xclip eller wl-clipboard krävs för att klistra in text")
     old = _xclip_read(xclip)
     _xclip_write(xclip, text)
-    paste = ["ctrl+shift+v"] if _active_is_terminal(xdotool) else ["ctrl+v"]
-    subprocess.run(
-        [xdotool, "key", "--clearmodifiers", *paste],
-        check=False,
-        timeout=3,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    _paste_keys(wayland=False)
     if old is None:
         return
 
@@ -53,6 +60,67 @@ def _inject_linux(text: str) -> None:
         _xclip_write(xclip, old)
 
     threading.Thread(target=restore, daemon=True).start()
+
+
+def _paste_keys(*, wayland: bool) -> None:
+    if wayland:
+        wtype = shutil.which("wtype")
+        if wtype:
+            subprocess.run(
+                [wtype, "-M", "ctrl", "-k", "v", "-m", "ctrl"],
+                check=False,
+                timeout=3,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        ydotool = shutil.which("ydotool")
+        if ydotool:
+            subprocess.run(
+                [ydotool, "key", "29:1", "47:1", "47:0", "29:0"],
+                check=False,
+                timeout=3,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+    xdotool = shutil.which("xdotool")
+    if not xdotool:
+        raise RuntimeError("xdotool, wtype eller ydotool krävs för att klistra in")
+    paste = ["ctrl+shift+v"] if _active_is_terminal(xdotool) else ["ctrl+v"]
+    subprocess.run(
+        [xdotool, "key", "--clearmodifiers", *paste],
+        check=False,
+        timeout=3,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def _wl_write(text: str) -> None:
+    subprocess.run(
+        ["wl-copy"],
+        input=text.encode("utf-8"),
+        check=False,
+        timeout=2,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def _wl_read() -> str | None:
+    try:
+        proc = subprocess.run(
+            ["wl-paste", "-n"],
+            check=False,
+            timeout=1,
+            capture_output=True,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.decode("utf-8", "replace")
 
 
 def _active_is_terminal(xdotool: str) -> bool:
