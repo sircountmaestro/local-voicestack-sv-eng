@@ -17,12 +17,20 @@ MIN_SECONDS = float(_env("STT_MIN_SECONDS", "0.28"))
 MAX_SECONDS = float(_env("STT_MAX_SECONDS", "60"))
 WHISPER_URL = _env("STT_WHISPER_URL", "http://127.0.0.1:9000")
 AZURE_URL = _env("STT_AZURE_URL", "http://127.0.0.1:5050")
-_ttpro = _env("TTSPRO_ROOT", "")
-_default_compose = (
-    str(Path(_ttpro) / "apps/whisper-stt-sv/compose.yml")
-    if _ttpro
-    else str(Path.home() / "apps/whisper-stt-sv/compose.yml")
-)
-WHISPER_COMPOSE = Path(_env("STT_WHISPER_COMPOSE", _default_compose))
+
+
+def _default_whisper_compose() -> Path:
+    override = os.environ.get("STT_WHISPER_COMPOSE")
+    if override and override.strip():
+        return Path(override.strip())
+    root = os.environ.get("TTSPRO_ROOT")
+    if root and root.strip():
+        return Path(root.strip()) / "apps/whisper-stt-sv/compose.yml"
+    # config.py → stt_hotkey → stt-hotkey → apps
+    apps = Path(__file__).resolve().parents[2]
+    return apps / "whisper-stt-sv" / "compose.yml"
+
+
+WHISPER_COMPOSE = _default_whisper_compose()
 TRANSCRIBE_TIMEOUT = int(_env("STT_TRANSCRIBE_TIMEOUT", "90"))
 DISPLAY = _env("DISPLAY", ":0")

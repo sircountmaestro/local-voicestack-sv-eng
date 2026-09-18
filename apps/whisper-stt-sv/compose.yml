@@ -15,4 +15,4 @@ services:
     ports:
       - "127.0.0.1:9000:9000"
     volumes:
-      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.cache/huggingface:/home/whisper/.cache/huggingface

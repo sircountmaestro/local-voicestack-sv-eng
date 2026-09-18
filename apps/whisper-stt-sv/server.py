@@ -35,6 +35,8 @@ MAX_BODY = int(os.environ.get("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 
 _INFER_LOCK = threading.Lock()
 _MODEL: WhisperModel | None = None
+_STATUS = "starting"
+_STATUS_ERROR = ""
 
 
 def load_model() -> WhisperModel:
@@ -48,6 +50,18 @@ def load_model() -> WhisperModel:
         _MODEL = WhisperModel(model_path, device=DEVICE, compute_type=COMPUTE_TYPE)
         print("model ready", flush=True)
     return _MODEL
+
+
+def _load_model_bg() -> None:
+    global _STATUS, _STATUS_ERROR
+    _STATUS = "loading"
+    try:
+        load_model()
+        _STATUS = "ready"
+    except Exception as exc:
+        _STATUS = "error"
+        _STATUS_ERROR = str(exc)
+        print(f"model load failed: {exc}", flush=True)
 
 
 def parse_multipart(
@@ -198,7 +212,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(
                 200,
                 {
-                    "ok": _MODEL is not None,
+                    "ok": _STATUS == "ready",
+                    "status": _STATUS,
+                    "error": _STATUS_ERROR or None,
                     "model": MODEL_ID,
                     "device": DEVICE,
                     "compute_type": COMPUTE_TYPE,
@@ -248,6 +264,12 @@ class Handler(BaseHTTPRequestHandler):
         else:
             audio = raw
             file_ctype = ctype.split(";")[0].strip() or file_ctype
+        if _STATUS != "ready":
+            self._json(
+                503,
+                {"error": {"message": "model not ready", "status": _STATUS}},
+            )
+            return
         if not audio:
             self._json(400, {"error": {"message": "file required"}})
             return
@@ -281,9 +303,9 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     if DEVICE != "cpu":
         raise SystemExit(f"refusing non-cpu device={DEVICE!r}")
-    load_model()
+    threading.Thread(target=_load_model_bg, daemon=True).start()
     httpd = ThreadingHTTPServer((LISTEN_HOST, LISTEN_PORT), Handler)
-    print(f"listen {LISTEN_HOST}:{LISTEN_PORT} model={MODEL_ID}", flush=True)
+    print(f"listen {LISTEN_HOST}:{LISTEN_PORT} model={MODEL_ID} status={_STATUS}", flush=True)
     httpd.serve_forever()
 
 

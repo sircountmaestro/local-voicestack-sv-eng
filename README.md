@@ -29,7 +29,9 @@ Ingen Azure-nyckel medföljer. Engelska (Kokoro) och diktering (Whisper) fungera
 
 Python-beroenden för diktering: `apps/stt-hotkey/requirements.txt`. Azure och Whisper installeras via Docker (egna `Dockerfile`).
 
-Containrar publiceras bara på `127.0.0.1`. `restart: unless-stopped` så Docker tar upp dem efter reboot. Linux-install kan slå på systemd-användartjänsten `local-voicestack.service` vid inloggning.
+Containrar publiceras bara på `127.0.0.1` — HTTP-gatewayerna är avsedda för en lokal användare, inte internet. `restart: unless-stopped` så Docker tar upp dem efter reboot. Linux-install kan slå på systemd-användartjänsten `local-voicestack.service` vid inloggning.
+
+**Språk:** Kokoro är engelska. Svensk kvalitet sitter i Azure. Brave-tillägget är vendored Kokoro TTS Sender med en Azure-omkopplare; minifierade libs reviewas inte som vår kod.
 
 ---
 
@@ -108,7 +110,8 @@ Brave: `brave://extensions` → Load unpacked → `apps/kokoro-fastapi/brave-ext
 | Svensk TTS tyst | Fyll `.env`, region måste matcha portalen |
 | Tom markering på Wayland | Installera `wl-clipboard`. Utan den krävs XWayland |
 | Ctrl+Alt+A tyst | Kör `tts`. KDE/Hypr/Sway: logga ut/in efter install |
-| Whisper trög första gången | CPU-modell + nedladdning. Vänta på health `:9000` |
+| Whisper trög första gången | CPU-modell + nedladdning. `tts` skriver `Whisper: loading…` tills `ready` |
+| Cache-rättigheter efter Whisper-root | `sudo chown -R "$USER" ~/.cache/huggingface` |
 | Windows | Docker Desktop igång. Använd `tts.cmd`, inte bara Git Bash |
 
 Images: Kokoro `v0.9.0` / `v0.9.0-cu128`. Egna gatewayer `local-voicestack-azure:1.0.0` och `local-voicestack-whisper:1.0.0`.

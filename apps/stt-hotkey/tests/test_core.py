@@ -57,6 +57,36 @@ class TranscribeClientTests(unittest.TestCase):
         self.assertIn("127.0.0.1:9000", url)
 
 
+class ComposePathTests(unittest.TestCase):
+    def test_default_is_under_apps(self) -> None:
+        from stt_hotkey.config import _default_whisper_compose
+
+        with mock.patch.dict("os.environ", {}, clear=False):
+            import os
+
+            os.environ.pop("STT_WHISPER_COMPOSE", None)
+            os.environ.pop("TTSPRO_ROOT", None)
+            path = _default_whisper_compose()
+        self.assertEqual(path.parent.name, "whisper-stt-sv")
+        self.assertEqual(path.name, "compose.yml")
+        self.assertEqual(path.parent.parent.name, "apps")
+
+
+class FfmpegDeviceTests(unittest.TestCase):
+    def test_parses_dshow_audio_name(self) -> None:
+        from stt_hotkey.audio import dshow_first_audio
+
+        listing = (
+            "ffmpeg version\n"
+            "[dshow @ 0x1] DirectShow video devices\n"
+            '[dshow @ 0x1]  "USB Camera"\n'
+            "[dshow @ 0x1] DirectShow audio devices\n"
+            '[dshow @ 0x1]  "Microphone (Realtek)"\n'
+            '[dshow @ 0x1]  "Stereo Mix"\n'
+        )
+        self.assertEqual(dshow_first_audio(listing), "Microphone (Realtek)")
+
+
 class LifecyclePidTests(unittest.TestCase):
     def test_stale_pid_cleared(self) -> None:
         from stt_hotkey import lifecycle

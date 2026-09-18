@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,55 @@ def wav_bytes(pcm: bytes, sample_rate: int = config.SAMPLE_RATE, channels: int =
     return buf.getvalue()
 
 
+def pulse_default_source() -> str | None:
+    pactl = shutil.which("pactl")
+    if not pactl:
+        return None
+    try:
+        proc = subprocess.run(
+            [pactl, "get-default-source"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    name = (proc.stdout or "").strip()
+    return name or None
+
+
+def dshow_first_audio(ffmpeg_stderr: str) -> str | None:
+    in_audio = False
+    for line in ffmpeg_stderr.splitlines():
+        lower = line.lower()
+        if "directshow audio devices" in lower:
+            in_audio = True
+            continue
+        if in_audio and "directshow video" in lower:
+            break
+        if in_audio:
+            match = re.search(r'"([^"]+)"', line)
+            if match:
+                return match.group(1)
+    return None
+
+
+def _dshow_first_audio_live() -> str | None:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return None
+    try:
+        proc = subprocess.run(
+            [ffmpeg, "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    return dshow_first_audio(proc.stderr or "")
+
+
 class Recorder:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -29,10 +79,23 @@ class Recorder:
 
     def start(self) -> None:
         self.stop()
-        impl = _FfmpegRecorder()
-        impl.start()
-        with self._lock:
-            self._impl = impl
+        errors: list[str] = []
+        for factory in (_SoundDeviceRecorder, _FfmpegRecorder):
+            impl = factory()
+            try:
+                _start_limited(impl, 4.0)
+            except Exception as exc:
+                errors.append(f"{factory.__name__}: {exc}")
+                try:
+                    impl.stop()
+                except Exception:
+                    pass
+                continue
+            with self._lock:
+                self._impl = impl
+            print(f"inspelning via {factory.__name__}", flush=True)
+            return
+        raise RuntimeError("; ".join(errors) or "ingen inspelningsbackend")
 
     def stop(self) -> bytes:
         with self._lock:
@@ -41,6 +104,24 @@ class Recorder:
         if impl is None:
             return b""
         return impl.stop()
+
+
+def _start_limited(impl: object, seconds: float) -> None:
+    box: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            impl.start()  # type: ignore[attr-defined]
+        except BaseException as exc:
+            box.append(exc)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    if thread.is_alive():
+        raise TimeoutError(f"{type(impl).__name__}.start timeout {seconds}s")
+    if box:
+        raise box[0]
 
 
 class _SoundDeviceRecorder:
@@ -84,15 +165,12 @@ class _FfmpegRecorder:
     def start(self) -> None:
         ffmpeg = shutil.which("ffmpeg")
         if not ffmpeg:
-            raise RuntimeError("varken sounddevice eller ffmpeg kan spela in")
+            raise RuntimeError("ffmpeg saknas")
         tmp = tempfile.NamedTemporaryFile(prefix="stt-hotkey-", suffix=".wav", delete=False)
         tmp.close()
         self._path = Path(tmp.name)
         args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
-        if sys.platform == "win32":
-            args += ["-f", "dshow", "-i", "audio=default"]
-        else:
-            args += ["-f", "pulse", "-i", "default"]
+        args += _ffmpeg_input_args()
         args += [
             "-ac",
             str(config.CHANNELS),
@@ -106,7 +184,10 @@ class _FfmpegRecorder:
 
     def stop(self) -> bytes:
         if self._proc is not None:
-            self._proc.send_signal(2) if sys.platform != "win32" else self._proc.terminate()
+            if sys.platform == "win32":
+                self._proc.terminate()
+            else:
+                self._proc.send_signal(2)
             try:
                 self._proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
@@ -119,3 +200,15 @@ class _FfmpegRecorder:
         data = path.read_bytes()
         path.unlink(missing_ok=True)
         return data
+
+
+def _ffmpeg_input_args() -> list[str]:
+    if sys.platform == "win32":
+        name = _dshow_first_audio_live()
+        if name:
+            return ["-f", "dshow", "-i", f"audio={name}"]
+        return ["-f", "wasapi", "-i", "default"]
+    source = pulse_default_source()
+    if source:
+        return ["-f", "pulse", "-i", source]
+    return ["-f", "pulse", "-i", "default"]
