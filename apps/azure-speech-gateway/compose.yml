@@ -1,0 +1,13 @@
+services:
+  azure-speech-gateway:
+    build: .
+    image: azure-speech-gateway:local
+    container_name: azure-speech-gateway
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      LISTEN_HOST: "0.0.0.0"
+      LISTEN_PORT: "5050"
+    ports:
+      - "127.0.0.1:5050:5050"

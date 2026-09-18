@@ -1,0 +1,107 @@
+{
+  "action": {
+    "default_icon": {
+      "128": "icons/icon128.png",
+      "48": "icons/icon48.png"
+    },
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "close-overlay": {
+      "description": "Close Overlay",
+      "suggested_key": {
+        "default": "Alt+W"
+      }
+    },
+    "nav-next": {
+      "description": "Next Sentence",
+      "suggested_key": {
+        "default": "Alt+Period"
+      }
+    },
+    "nav-prev": {
+      "description": "Previous Sentence",
+      "suggested_key": {
+        "default": "Alt+Comma"
+      }
+    },
+    "open-reader": {
+      "description": "Open Document (EPUB)"
+    },
+    "read-article": {
+      "description": "Read Article with Kokoro TTS",
+      "suggested_key": {
+        "default": "Alt+A"
+      }
+    }
+  },
+  "content_scripts": [
+    {
+      "js": [
+        "browser-polyfill.min.js",
+        "readability.js",
+        "content.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  },
+  "description": "Send text from browser to Kokoro-FastAPI for TTS generation",
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "icons": {
+    "128": "icons/icon128.png",
+    "48": "icons/icon48.png"
+  },
+  "manifest_version": 3,
+  "name": "Kokoro TTS Sender (lokal)",
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "notifications",
+    "scripting",
+    "alarms",
+    "downloads"
+  ],
+  "version": "1.3.1.3",
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "resources": [
+        "overlay.html",
+        "overlay.css",
+        "overlay.js",
+        "text-processor.js",
+        "audio-manager.js",
+        "dom-utils.js",
+        "browser-polyfill.min.js",
+        "compromise.js",
+        "compromise-dates.min.js",
+        "compromise-numbers.min.js",
+        "transliteration-lite.js",
+        "purify.js",
+        "theme-init.js",
+        "reader.html",
+        "reader.js",
+        "reader.css",
+        "epub.min.js",
+        "jszip.min.js"
+      ]
+    }
+  ]
+}

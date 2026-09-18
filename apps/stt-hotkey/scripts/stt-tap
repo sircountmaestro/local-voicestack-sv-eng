@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Anropas av GNOME-genvägen Ctrl+Alt+A.
+set -euo pipefail
+FIFO="${XDG_RUNTIME_DIR:-/tmp}/stt-hotkey/tap"
+if [[ ! -p "$FIFO" ]]; then
+  exit 1
+fi
+python3 - "$FIFO" <<'PY'
+import os, sys
+path = sys.argv[1]
+try:
+    fd = os.open(path, os.O_WRONLY | os.O_NONBLOCK)
+    os.write(fd, b"toggle\n")
+    os.close(fd)
+except OSError:
+    sys.exit(1)
+PY

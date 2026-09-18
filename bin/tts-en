@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# shellcheck source=root.sh
+source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/root.sh"
+exec "$ROOT/bin/tts-sel" en "$@"

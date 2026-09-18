@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <script src="browser-polyfill.min.js"></script>
+    <script src="theme-init.js"></script>
+    <link rel="stylesheet" href="overlay.css">
+</head>
+
+<body>
+    <div class="header">
+        <div class="header-top">
+            <div class="title" id="pageTitle">Kokoro TTS</div>
+            <button class="close-btn" id="close">&times;</button>
+        </div>
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div id="timeEstimate"></div>
+    </div>
+    <div class="content">
+        <div id="status-container">
+            <div class="spinner" id="loadingSpinner"></div>
+            <div id="status">Ready</div>
+        </div>
+        <div id="text-display">
+        </div>
+        <audio id="audio"></audio>
+        <div class="controls">
+            <button class="control-btn" id="playPause">Pause</button>
+            <button class="control-btn" id="seekBack">Prev</button>
+            <button class="control-btn" id="seekFwd">Next</button>
+
+            <!-- Volume Control -->
+            <div class="volume-container">
+                <span class="volume-label">Vol</span>
+                <input type="range" id="volumeControl" min="0" max="1" step="0.1" value="1" class="volume-slider">
+            </div>
+
+            <button class="control-btn" id="retry">Retry</button>
+            <select id="speed">
+                <option value="0.5">0.5x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1.0" selected>1.0x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="1.75">1.75x</option>
+                <option value="2.0">2.0x</option>
+                <option value="2.25">2.25x</option>
+                <option value="2.5">2.5x</option>
+                <option value="2.7">2.7x</option>
+                <option value="2.8">2.8x</option>
+                <option value="3.0">3.0x</option>
+            </select>
+        </div>
+    </div>
+    <script src="compromise.js"></script>
+    <script src="compromise-dates.min.js"></script>
+    <script src="compromise-numbers.min.js"></script>
+    <script src="transliteration-lite.js"></script>
+    <script src="purify.js"></script>
+    <script type="module" src="overlay.js"></script>
+</body>
+
+</html>

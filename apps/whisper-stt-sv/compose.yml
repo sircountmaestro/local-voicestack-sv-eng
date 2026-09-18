@@ -1,0 +1,17 @@
+services:
+  whisper-stt-sv:
+    build: .
+    image: whisper-stt-sv:local
+    container_name: whisper-stt-sv
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      LISTEN_HOST: "0.0.0.0"
+      LISTEN_PORT: "9000"
+      NVIDIA_VISIBLE_DEVICES: ""
+      CUDA_VISIBLE_DEVICES: ""
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Starta STT-lyssnaren om den inte redan kör. Anropas från tts.
+set -euo pipefail
+
+SCRIPT="$(readlink -f "$0")"
+ROOT="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
+export DISPLAY="${DISPLAY:-:0}"
+if [[ -z "${XAUTHORITY:-}" && -f "$HOME/.Xauthority" ]]; then
+  export XAUTHORITY="$HOME/.Xauthority"
+fi
+export PATH="$HOME/.local/bin:/usr/bin:/bin:$PATH"
+
+if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
+  echo "STT: saknar venv. Kör: uv venv --python 3.12 \"$ROOT/.venv\" && \"$ROOT/.venv/bin/python\" -m pip install -r \"$ROOT/requirements.txt\"" >&2
+  exit 1
+fi
+
+cd "$ROOT"
+exec "$ROOT/.venv/bin/python" -m stt_hotkey ensure

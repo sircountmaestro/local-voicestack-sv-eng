@@ -1,0 +1,11 @@
+services:
+  kokoro-fastapi:
+    image: ghcr.io/remsky/kokoro-fastapi-gpu:v0.9.0-cu128
+    container_name: kokoro-fastapi
+    restart: "no"
+    gpus: all
+    ports:
+      - "127.0.0.1:8880:8880"
+    environment:
+      API_LOG_LEVEL: INFO
+      DEFAULT_VOICE: af_heart

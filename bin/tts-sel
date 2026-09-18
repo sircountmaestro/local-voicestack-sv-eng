@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# Läs markerad text och spela via Kokoro (en) eller Azure (sv).
+# Användning: tts-sel en | tts-sel sv
+set -u
+export DISPLAY="${DISPLAY:-:0}"
+export PATH="$HOME/.local/bin:/usr/bin:/bin:$PATH"
+
+log="${TMPDIR:-/tmp}/tts-sel.log"
+echo "$(date -Iseconds) start args=$* DISPLAY=$DISPLAY USER=$USER" >>"$log"
+
+lang="${1:-en}"
+case "$lang" in
+  en|english|kokoro)
+    url="http://127.0.0.1:8880/v1/audio/speech"
+    health="http://127.0.0.1:8880/health"
+    voice="af_heart"
+    model="kokoro"
+    max_chars=8000
+    label="Kokoro EN"
+    ;;
+  sv|svenska|azure)
+    url="http://127.0.0.1:5050/v1/audio/speech"
+    health="http://127.0.0.1:5050/health"
+    voice="sv-SE-HilleviNeural"
+    model="azure-tts"
+    max_chars=4000
+    label="Azure SV"
+    ;;
+  *)
+    command -v notify-send >/dev/null && notify-send "TTS" "Använd: tts-sel en  eller  tts-sel sv"
+    echo "bad lang $lang" >>"$log"
+    exit 2
+    ;;
+esac
+
+if ! curl -sf --max-time 2 "$health" >/dev/null; then
+  command -v notify-send >/dev/null && notify-send "TTS" "$label är nere. Öppna en terminal och kör: tts"
+  echo "health fail $health" >>"$log"
+  exit 1
+fi
+
+command -v notify-send >/dev/null && notify-send -t 2000 "TTS" "$label: läser markerad text"
+
+read_sel() {
+  timeout 2 python3 - <<'PY' 2>/dev/null || true
+import gi
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, Gdk
+for sel in (Gdk.SELECTION_PRIMARY, Gdk.SELECTION_CLIPBOARD):
+    t = Gtk.Clipboard.get(sel).wait_for_text()
+    if t and t.strip():
+        print(t, end="")
+        break
+PY
+}
+text="$(read_sel)"
+xclip="$(command -v xclip || true)"
+if [[ -z "$text" && -n "$xclip" ]]; then
+  text="$(timeout 1 "$xclip" -selection primary -o 2>/dev/null || true)"
+fi
+if [[ -z "$text" && -n "$xclip" ]]; then
+  text="$(timeout 1 "$xclip" -selection clipboard -o 2>/dev/null || true)"
+fi
+text="${text#"${text%%[![:space:]]*}"}"
+text="${text%"${text##*[![:space:]]}"}"
+
+if [[ -z "$text" ]]; then
+  command -v notify-send >/dev/null && notify-send "TTS" "Ingen text markerad."
+  echo "empty selection" >>"$log"
+  exit 1
+fi
+
+echo "got ${#text} chars lang=$lang" >>"$log"
+
+if (( ${#text} > max_chars )); then
+  text="${text:0:max_chars}"
+  command -v notify-send >/dev/null && notify-send "TTS" "Texten kapades till ${max_chars} tecken."
+fi
+
+out="${TMPDIR:-/tmp}/tts-sel.mp3"
+export TTS_SEL_MODEL="$model"
+export TTS_SEL_VOICE="$voice"
+printf '%s' "$text" | python3 -c 'import json,os,sys; print(json.dumps({"model":os.environ["TTS_SEL_MODEL"],"voice":os.environ["TTS_SEL_VOICE"],"input":sys.stdin.read(),"response_format":"mp3"}))' > "${TMPDIR:-/tmp}/tts-sel.json"
+
+pkill -f 'ffplay .*/tts-sel.mp3' >/dev/null 2>&1 || true
+
+code="$(curl -sS --max-time 120 -o "$out" -w '%{http_code}' \
+  -H 'Content-Type: application/json' \
+  --data-binary @"${TMPDIR:-/tmp}/tts-sel.json" \
+  "$url")"
+
+echo "http $code bytes $(wc -c < "$out" 2>/dev/null || echo 0)" >>"$log"
+
+if [[ "$code" != "200" ]] || [[ ! -s "$out" ]]; then
+  command -v notify-send >/dev/null && notify-send "TTS" "$label fel HTTP $code"
+  exit 1
+fi
+
+exec ffplay -nodisp -autoexit -loglevel error "$out"

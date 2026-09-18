@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Stoppa STT-lyssnaren. Anropas från ttsoff.
+set -euo pipefail
+
+SCRIPT="$(readlink -f "$0")"
+ROOT="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
+if [[ ! -x "$ROOT/.venv/bin/python" ]]; then
+  echo "STT Ctrl+Alt+A körs inte"
+  exit 0
+fi
+cd "$ROOT"
+exec "$ROOT/.venv/bin/python" -m stt_hotkey stop

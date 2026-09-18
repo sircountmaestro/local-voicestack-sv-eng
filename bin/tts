@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Starta Kokoro (EN), Azure (SV om nyckel finns) och STT-lyssnaren.
+set -euo pipefail
+# shellcheck source=root.sh
+source "$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)/root.sh"
+export PATH="$HOME/.local/bin:/usr/bin:/bin:$PATH"
+
+wait_http() {
+  local url="$1"
+  local max="${2:-60}"
+  local i=0
+  while (( i < max )); do
+    if curl -sf --max-time 2 "$url" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+kokoro_compose="$ROOT/apps/kokoro-fastapi/compose.yml"
+if [[ -f "$ROOT/apps/kokoro-fastapi/.use-cpu" ]]; then
+  kokoro_compose="$ROOT/apps/kokoro-fastapi/compose.cpu.yml"
+fi
+docker compose -f "$kokoro_compose" up -d
+
+azure_env="$ROOT/apps/azure-speech-gateway/.env"
+if [[ -f "$azure_env" ]] && grep -qE '^AZURE_SPEECH_KEY=[^[:space:]]+' "$azure_env"; then
+  docker compose -f "$ROOT/apps/azure-speech-gateway/compose.yml" up -d
+else
+  echo "Azure hoppas över (ingen nyckel). Svensk TTS av. Se README.md." >&2
+fi
+
+STT_ENSURE="$ROOT/apps/stt-hotkey/scripts/stt-ensure"
+if [[ -x "$STT_ENSURE" ]]; then
+  "$STT_ENSURE" || echo "STT-lyssnaren startade inte" >&2
+fi
+
+if wait_http "http://127.0.0.1:8880/health" 90; then
+  echo "Kokoro EN  http://127.0.0.1:8880/web/"
+else
+  echo "Kokoro svarade inte på :8880" >&2
+fi
+
+if [[ -f "$azure_env" ]] && grep -qE '^AZURE_SPEECH_KEY=[^[:space:]]+' "$azure_env"; then
+  if wait_http "http://127.0.0.1:5050/health" 20; then
+    echo "Azure SV   http://127.0.0.1:5050/health"
+  else
+    echo "Azure svarade inte på :5050" >&2
+  fi
+fi
+
+if [[ "${TTSPRO_OPEN_UI:-}" == "1" ]]; then
+  if command -v brave-browser >/dev/null; then
+    brave-browser --new-tab "http://127.0.0.1:8880/web/" >/dev/null 2>&1 &
+  elif command -v xdg-open >/dev/null; then
+    xdg-open "http://127.0.0.1:8880/web/" >/dev/null 2>&1 &
+  fi
+  disown -a >/dev/null 2>&1 || true
+fi
+
+echo "Stoppa med: ttsoff"

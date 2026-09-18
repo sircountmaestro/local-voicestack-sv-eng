@@ -1,0 +1,12 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.log
+.DS_Store
+Thumbs.db
+orig/
+apps/kokoro-fastapi/.use-cpu
